@@ -1,0 +1,55 @@
+name: data-seed
+
+# Builds the iOS Data seed (DBRDISK1) that the venus payload mounts at /private/var.
+# The IPSW OS image ships no Data volume, so the /private/var skeleton is created by
+# macOS hdiutil (Apple's own APFS implementation) and packed for NativeRamBlock.
+# Run it from Actions -> data-seed -> Run workflow, then download the artifact and
+# place it next to the other payload inputs (venus-ios16/data-seed-<build>.dbr).
+
+on:
+  workflow_dispatch:
+    inputs:
+      build:
+        description: OS build recorded in the seed (com.apple.migration LastSystemVersion)
+        required: true
+        default: 20H392
+      gib:
+        description: APFS container size in GiB (3..1024)
+        required: true
+        default: "2"
+
+permissions:
+  contents: read
+
+jobs:
+  seed:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: host
+        run: |
+          sw_vers
+          python3 --version
+          hdiutil info | sed -n '1,5p'
+
+      - name: build seed
+        env:
+          BUILD: ${{ inputs.build }}
+          GIB: ${{ inputs.gib }}
+        run: |
+          set -euo pipefail
+          python3 .github/seed/make_data_seed.py \
+            --build "$BUILD" --gib "$GIB" \
+            --output "out/data-seed-$BUILD.dbr"
+          shasum -a 256 "out/data-seed-$BUILD.dbr"
+          ls -l "out/data-seed-$BUILD.dbr"
+
+      - name: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-seed-${{ inputs.build }}
+          path: out/data-seed-${{ inputs.build }}.dbr
+          if-no-files-found: error
+          retention-days: 90
